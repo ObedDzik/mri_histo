@@ -2,6 +2,7 @@ from pathlib import Path
 import random
 import numpy as np
 import torch
+import torch.nn.functional as F
 
 def isup_to_3class(y: int) -> int:
     return 0 if y <= 1 else (1 if y <= 3 else 2)
@@ -22,6 +23,7 @@ def get_histo_by_isup(encodings_dir, marksheet_csv, num_classes = 6, provider = 
         except KeyError:
             continue
         vector = torch.as_tensor(np.load(path))
+        vector = F.normalize(vector, p=2, dim=-1) 
         out_key = isup
         if num_classes == 3:
             out_key = isup_to_3class(isup)
@@ -57,6 +59,7 @@ def triplet_loss(mri_emb, mri_gt_label, histo_dict, margin=1, reduction: str = "
     return loss_fn(mri_emb, pos, neg)
 
 def triplet_loss_batch(embeddings, labels, histo_dict, margin=1, reduction: str = "mean", num_classes=6):
+    embeddings = F.normalize(embeddings, p=2, dim=-1)
     losses = []
     for i in range(embeddings.size(0)):
         losses.append(triplet_loss(embeddings[i], int(labels[i].item()), histo_dict, margin=margin, reduction=reduction, num_classes=num_classes))

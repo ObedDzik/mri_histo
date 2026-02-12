@@ -103,7 +103,7 @@ def extract_embeddings(loader, model, device="cuda", desc='extract_emb_train'):
 
 def evaluate_embeddings_with_logreg(X_train, y_train, X_val, y_val, n_classes, max_iter: int = 500):
     """Train logistic regression on embeddings and evaluate."""
-    clf = LogisticRegression(max_iter=max_iter, multi_class="multinomial", solver="lbfgs", n_jobs=-1)
+    clf = LogisticRegression(max_iter=max_iter, solver="saga", n_jobs=-1)
     clf.fit(X_train, y_train)
     y_pred = clf.predict(X_val)
     metrics = {
@@ -351,7 +351,7 @@ def stage1_triplet_alignment(model, train_loader, val_loader, train_buckets, val
         wandb.log(log_dict)
         
         # Early stopping based on macro AUC
-        checkpoint_path = cfg.checkpoint_dir / "stage1_best.pt"
+        checkpoint_path = str(Path(cfg.checkpoint_dir) / "stage1_best.pt")
         if early_stopper.update(lr_metrics["macro_auc"], model, save_path=checkpoint_path):
             print(f" New best model (auc={early_stopper.best:.4f})")
         else:
@@ -432,7 +432,7 @@ def stage2_classification(model, train_loader, val_loader, class_weights, cfg, d
             "stage2/val_bacc": val_metrics["bacc"],
             "stage2/val_f1": val_metrics["f1_macro"],
         })
-        checkpoint_path = cfg.checkpoint_dir / "stage2_best.pt"
+        checkpoint_path = str(Path(cfg.checkpoint_dir) / "stage2_best.pt")
         if early_stopper.update(val_metrics["bacc"], model, save_path=checkpoint_path):
             print(f"  New best model (bacc={early_stopper.best:.4f})")
         else:
@@ -539,7 +539,7 @@ def main(cfg):
                 "test/f1_macro": test_metrics["f1_macro"],
                 "test/macro_auc": test_metrics["macro_auc"],
             })
-        final_path = cfg.chkpt_dir / "final_model.pt"
+        final_path = str(Path(cfg.chkpt_dir) / "final_model.pt")
         torch.save(model.state_dict(), final_path)
         print(f"\nFinal model saved to: {final_path}")
     # Cleanup

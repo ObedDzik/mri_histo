@@ -40,7 +40,7 @@ align:
   triplet_lr: 3e-4
   triplet_wd: 0.01
   enc_lr_mult: 0.1 #Encoder LR = triplet_lr * enc_lr_mult
-  logreg_max_iter: 1000
+  logreg_max_iter: 50000
   checkpoint_dir: ${chkpt_dir}
   n_classes: ${data.n_classes}
 
