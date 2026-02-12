@@ -100,9 +100,10 @@ def extract_embeddings(loader, model, device="cuda", desc='extract_emb_train'):
     return X, y
 
 
-def evaluate_embeddings_with_logreg(X_train, y_train, X_val, y_val, n_classes, max_iter, class_weights=None):
+def evaluate_embeddings_with_logreg(X_train, y_train, X_val, y_val, n_classes, max_iter, class_weights=None, classes=None):
     """Train logistic regression on embeddings and evaluate."""
-    clf = LogisticRegression(max_iter=max_iter, solver="saga", class_weight = class_weights, n_jobs=-1)
+    weights = {str(k): v.item() for k, v in zip(classes, class_weights)}
+    clf = LogisticRegression(max_iter=max_iter, solver="saga", class_weight = weights, n_jobs=-1)
     clf.fit(X_train, y_train)
     y_pred = clf.predict(X_val)
     metrics = {
@@ -280,7 +281,7 @@ def setup_model(cfg, device):
     print(f"Num classes: {cfg.data.n_classes}")
     return model
 
-def stage1_triplet_alignment(model, train_loader, val_loader, train_buckets, val_buckets, cfg, device, class_weights=None):
+def stage1_triplet_alignment(model, train_loader, val_loader, train_buckets, val_buckets, cfg, device, class_weights=None, classes=None):
     """Stage 1: Align encoder embeddings to histopathology reference."""
     print("\n" + "="*80)
     print("STAGE 1: TRIPLET ALIGNMENT")
@@ -325,7 +326,7 @@ def stage1_triplet_alignment(model, train_loader, val_loader, train_buckets, val
         val_loss = run_triplet_epoch(val_loader, model, val_triplet_loss, None, device, desc='eval')
         X_train, y_train = extract_embeddings(train_loader, model, device, desc='extract_emb_train')
         X_val, y_val = extract_embeddings(val_loader, model, device, desc='extract_emb_val')
-        lr_metrics = evaluate_embeddings_with_logreg(X_train, y_train, X_val, y_val, cfg.n_classes, cfg.logreg_max_iter, class_weights=class_weights)
+        lr_metrics = evaluate_embeddings_with_logreg(X_train, y_train, X_val, y_val, cfg.n_classes, cfg.logreg_max_iter, class_weights=class_weights, classes=classes)
         
         print(f"\nEpoch {epoch}/{cfg.triplet_epochs}")
         print(f" Loss: train={train_loss:.4f}, val={val_loss:.4f}")
@@ -519,7 +520,7 @@ def main(cfg):
     model = setup_model(cfg, device)
 
     # Stage 1: Triplet alignment
-    model = stage1_triplet_alignment(model, train_loader, val_loader, train_buckets, val_buckets, cfg.align, device, class_weights=class_weights)
+    model = stage1_triplet_alignment(model,train_loader,val_loader,train_buckets,val_buckets,cfg.align,device,class_weights=class_weights,classes=classes_present)
     if cfg.train_mode == "train_classifier":
         # Stage 2: Classification head
         model = stage2_classification(model, train_loader, val_loader, class_weights, cfg.head, device)
