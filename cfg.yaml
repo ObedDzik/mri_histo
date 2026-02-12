@@ -1,6 +1,6 @@
 train_mode: triplet_align #train_classifier
 setup_name: align_encoder_test
-name: test_${train_mode}_${setup_name}
+name: train_${train_mode}_${setup_name}
 chkpt_dir: /${oc.env:CHECKPOINT}/${oc.env:JOB_ID}
 
 seed: 42

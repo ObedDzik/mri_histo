@@ -100,7 +100,7 @@ def extract_embeddings(loader, model, device="cuda", desc='extract_emb_train'):
     return X, y
 
 
-def evaluate_embeddings_with_logreg(X_train, y_train, X_val, y_val, n_classes, max_iter, class_weights=class_weights):
+def evaluate_embeddings_with_logreg(X_train, y_train, X_val, y_val, n_classes, max_iter, class_weights=None):
     """Train logistic regression on embeddings and evaluate."""
     clf = LogisticRegression(max_iter=max_iter, solver="saga", class_weight = class_weights, n_jobs=-1)
     clf.fit(X_train, y_train)
@@ -280,7 +280,7 @@ def setup_model(cfg, device):
     print(f"Num classes: {cfg.data.n_classes}")
     return model
 
-def stage1_triplet_alignment(model, train_loader, val_loader, train_buckets, val_buckets, cfg, device, class_weights=class_weights):
+def stage1_triplet_alignment(model, train_loader, val_loader, train_buckets, val_buckets, cfg, device, class_weights=None):
     """Stage 1: Align encoder embeddings to histopathology reference."""
     print("\n" + "="*80)
     print("STAGE 1: TRIPLET ALIGNMENT")
