@@ -1,0 +1,16 @@
+nibabel==5.3.3
+numpy==2.4.2
+omegaconf==2.3.0+computecanada
+pandas==3.0.0
+scikit_learn==1.8.0
+torch==2.9.0+computecanada
+torch==2.9.1+computecanada
+tqdm==4.67.1+computecanada
+tqdm==4.67.3+computecanada
+wandb==0.24.2
+tqdm
+torchmetrics
+termcolor
+collection
+
+

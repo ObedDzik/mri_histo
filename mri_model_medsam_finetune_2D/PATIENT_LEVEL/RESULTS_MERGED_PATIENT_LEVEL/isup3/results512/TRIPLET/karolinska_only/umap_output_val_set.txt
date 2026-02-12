@@ -1,2 +1,0 @@
-Val set: Baseline MRI UMAP2D (cos): 0.018 | (euc): 0.026
-Val set: Triplet Loss Aligned (Karolinska Only) UMAP2D (cos): 0.231 | (euc): 0.011
