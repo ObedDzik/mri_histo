@@ -81,13 +81,13 @@ def run_triplet_epoch(loader, model, triplet_loss_fn, optimizer = None, device =
 
 
 @torch.no_grad()
-def extract_embeddings(loader, model, device="cuda"):
+def extract_embeddings(loader, model, device="cuda", desc='extract_emb_train'):
     """Extract all embeddings and labels from a dataloader."""
     model.eval()
     all_embeddings = []
     all_labels = []
     
-    for batch in loader:
+    for batch in tqdm(loader, desc=desc):
         images = batch["image"].to(device, non_blocking=True)
         labels = batch["label"].to(device, non_blocking=True)
         _, embeddings = model(images)
@@ -329,8 +329,8 @@ def stage1_triplet_alignment(model, train_loader, val_loader, train_buckets, val
     for epoch in range(1, cfg.triplet_epochs + 1):
         train_loss = run_triplet_epoch(train_loader, model, train_triplet_loss, optimizer, device, desc='train')
         val_loss = run_triplet_epoch(val_loader, model, val_triplet_loss, None, device, desc='eval')
-        X_train, y_train = extract_embeddings(train_loader, model, device)
-        X_val, y_val = extract_embeddings(val_loader, model, device)
+        X_train, y_train = extract_embeddings(train_loader, model, device, desc='extract_emb_train')
+        X_val, y_val = extract_embeddings(val_loader, model, device, desc='extract_emb_val')
         lr_metrics = evaluate_embeddings_with_logreg(X_train, y_train, X_val, y_val, cfg.n_classes, cfg.logreg_max_iter)
         
         print(f"\nEpoch {epoch}/{cfg.triplet_epochs}")
