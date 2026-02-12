@@ -66,7 +66,6 @@ def run_triplet_epoch(loader, model, triplet_loss_fn, optimizer = None, device =
             images = batch["image"].to(device, non_blocking=True)
             labels = batch["label"].to(device, non_blocking=True)
         
-            # Forward: extract embeddings (ignore logits)
             _, embeddings = model(images)
             loss = triplet_loss_fn(embeddings, labels)
             if is_training:
@@ -101,9 +100,9 @@ def extract_embeddings(loader, model, device="cuda", desc='extract_emb_train'):
     return X, y
 
 
-def evaluate_embeddings_with_logreg(X_train, y_train, X_val, y_val, n_classes, max_iter: int = 500):
+def evaluate_embeddings_with_logreg(X_train, y_train, X_val, y_val, n_classes, max_iter, class_weights=class_weights):
     """Train logistic regression on embeddings and evaluate."""
-    clf = LogisticRegression(max_iter=max_iter, solver="saga", n_jobs=-1)
+    clf = LogisticRegression(max_iter=max_iter, solver="saga", class_weight = class_weights, n_jobs=-1)
     clf.fit(X_train, y_train)
     y_pred = clf.predict(X_val)
     metrics = {
@@ -112,7 +111,7 @@ def evaluate_embeddings_with_logreg(X_train, y_train, X_val, y_val, n_classes, m
         "f1_macro": float(f1_score(y_val, y_pred, average="macro")),
         "clf": clf,
     }
-    # Per-class accuracy
+    # accuracy
     per_acc = {}
     for c in range(n_classes):
         mask = y_val == c
@@ -121,7 +120,7 @@ def evaluate_embeddings_with_logreg(X_train, y_train, X_val, y_val, n_classes, m
         else:
             per_acc[c] = float("nan")
     metrics["per_acc"] = per_acc
-    # Per-class AUC (if probabilities available)
+    # AUC
     per_auc = {c: float("nan") for c in range(n_classes)}
     macro_auc = float("nan")
     
@@ -195,9 +194,6 @@ def setup_dataloaders(cfg):
     print("\n" + "="*80)
     print("SETTING UP DATA")
     print("="*80)
-    # folds_train = [s.strip() for s in cfg.folds_train.split(",")]
-    # folds_val = [s.strip() for s in cfg.folds_val.split(",")]
-    # folds_test = [s.strip() for s in cfg.folds_test.split(",")]
     print(f"Folds: train={cfg.folds_train}, val={cfg.folds_val}, test={cfg.folds_test}")
 
     train_loader, val_loader, test_loader, class_weights, classes_present, n_classes = get_dataloaders(
@@ -224,9 +220,7 @@ def setup_dataloaders(cfg):
     print(f"Val distribution: {val_loader.dataset.get_label_distribution()}")
     if test_loader.dataset:
         print(f"Test distribution: {test_loader.dataset.get_label_distribution()}")
-    
     return train_loader, val_loader, test_loader, class_weights, classes_present, n_classes
-
 
 def setup_histo_buckets(cfg):
     """Load histopathology reference embeddings."""
@@ -279,14 +273,14 @@ def setup_model(cfg, device):
         attn_dim=cfg.model.attn_dim,
         head_hidden=cfg.head.head_hidden,
         head_dropout=cfg.head.head_dropout,
-        pixel_mean_std=(cfg.model.mean, cfg.model.std),  # ImageNet normalization
+        pixel_mean_std=(cfg.model.mean, cfg.model.std),
     )
     model = model.to(device)
     print(f"Embedding dim: {model.C} -> {cfg.model.proj_dim}")
     print(f"Num classes: {cfg.data.n_classes}")
     return model
 
-def stage1_triplet_alignment(model, train_loader, val_loader, train_buckets, val_buckets, cfg, device):
+def stage1_triplet_alignment(model, train_loader, val_loader, train_buckets, val_buckets, cfg, device, class_weights=class_weights):
     """Stage 1: Align encoder embeddings to histopathology reference."""
     print("\n" + "="*80)
     print("STAGE 1: TRIPLET ALIGNMENT")
@@ -331,7 +325,7 @@ def stage1_triplet_alignment(model, train_loader, val_loader, train_buckets, val
         val_loss = run_triplet_epoch(val_loader, model, val_triplet_loss, None, device, desc='eval')
         X_train, y_train = extract_embeddings(train_loader, model, device, desc='extract_emb_train')
         X_val, y_val = extract_embeddings(val_loader, model, device, desc='extract_emb_val')
-        lr_metrics = evaluate_embeddings_with_logreg(X_train, y_train, X_val, y_val, cfg.n_classes, cfg.logreg_max_iter)
+        lr_metrics = evaluate_embeddings_with_logreg(X_train, y_train, X_val, y_val, cfg.n_classes, cfg.logreg_max_iter, class_weights=class_weights)
         
         print(f"\nEpoch {epoch}/{cfg.triplet_epochs}")
         print(f" Loss: train={train_loss:.4f}, val={val_loss:.4f}")
@@ -372,7 +366,6 @@ def stage2_classification(model, train_loader, val_loader, class_weights, cfg, d
     print("STAGE 2: CLASSIFICATION HEAD")
     print("="*80)
     
-    # Configure trainable parameters based on scope
     for param in model.parameters():
         param.requires_grad = False
     
@@ -526,7 +519,7 @@ def main(cfg):
     model = setup_model(cfg, device)
 
     # Stage 1: Triplet alignment
-    model = stage1_triplet_alignment(model, train_loader, val_loader, train_buckets, val_buckets, cfg.align, device)
+    model = stage1_triplet_alignment(model, train_loader, val_loader, train_buckets, val_buckets, cfg.align, device, class_weights=class_weights)
     if cfg.train_mode == "train_classifier":
         # Stage 2: Classification head
         model = stage2_classification(model, train_loader, val_loader, class_weights, cfg.head, device)
@@ -542,7 +535,7 @@ def main(cfg):
         final_path = str(Path(cfg.chkpt_dir) / "final_model.pt")
         torch.save(model.state_dict(), final_path)
         print(f"\nFinal model saved to: {final_path}")
-    # Cleanup
+
     wandb.finish()
     print("\n" + "="*80)
     print("TRAINING COMPLETE")
