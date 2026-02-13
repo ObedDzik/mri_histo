@@ -351,9 +351,11 @@ def stage1_triplet_alignment(model, train_loader, val_loader, train_buckets, val
             print(f" New best model (auc={early_stopper.best:.4f})")
         else:
             print(f" No improvement ({early_stopper.num_bad}/{early_stopper.patience})")
-            if early_stopper.should_stop():
+            if early_stopper.num_bad >= early_stopper.patience:
                 print(f"\nEarly stopping at epoch {epoch}")
                 break
+
+
     if early_stopper.load_best_into(model):
         print(f"\nLoaded best model from epoch with auc={early_stopper.best:.4f}")
     else:
@@ -431,9 +433,10 @@ def stage2_classification(model, train_loader, val_loader, class_weights, cfg, d
             print(f"  New best model (bacc={early_stopper.best:.4f})")
         else:
             print(f"  No improvement ({early_stopper.num_bad}/{early_stopper.patience})")
-            if early_stopper.should_stop():
+            if early_stopper.num_bad >= early_stopper.patience:
                 print(f"\nEarly stopping at epoch {epoch}")
                 break
+
     if early_stopper.load_best_into(model):
         print(f"\nLoaded best model with bacc={early_stopper.best:.4f}")
     else:
