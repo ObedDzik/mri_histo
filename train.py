@@ -346,7 +346,7 @@ def stage1_triplet_alignment(model, train_loader, val_loader, train_buckets, val
         wandb.log(log_dict)
         
         # Early stopping based on macro AUC
-        checkpoint_path = str(Path(cfg.checkpoint_dir) / "stage1_best.pt")
+        checkpoint_path = Path(cfg.checkpoint_dir) / "stage1_best.pt"
         if early_stopper.update(lr_metrics["macro_auc"], model, save_path=checkpoint_path):
             print(f" New best model (auc={early_stopper.best:.4f})")
         else:
@@ -426,7 +426,7 @@ def stage2_classification(model, train_loader, val_loader, class_weights, cfg, d
             "stage2/val_bacc": val_metrics["bacc"],
             "stage2/val_f1": val_metrics["f1_macro"],
         })
-        checkpoint_path = str(Path(cfg.checkpoint_dir) / "stage2_best.pt")
+        checkpoint_path = Path(cfg.checkpoint_dir) / "stage2_best.pt"
         if early_stopper.update(val_metrics["bacc"], model, save_path=checkpoint_path):
             print(f"  New best model (bacc={early_stopper.best:.4f})")
         else:
