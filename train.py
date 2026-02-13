@@ -103,7 +103,7 @@ def extract_embeddings(loader, model, device="cuda", desc='extract_emb_train'):
 def evaluate_embeddings_with_logreg(X_train, y_train, X_val, y_val, n_classes, max_iter, class_weights=None, classes=None):
     """Train logistic regression on embeddings and evaluate."""
     weights = {int(k): v.item() for k, v in zip(classes, class_weights)}
-    clf = LogisticRegression(max_iter=max_iter, solver="saga", class_weight = weights, n_jobs=-1)
+    clf = LogisticRegression(max_iter=max_iter, solver="saga", class_weight = weights)
     clf.fit(X_train, y_train)
     y_pred = clf.predict(X_val)
     metrics = {
