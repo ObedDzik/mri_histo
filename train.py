@@ -291,10 +291,13 @@ def stage1_triplet_alignment(model, train_loader, val_loader, train_buckets, val
         param.requires_grad = False
     for param in model.encoder.parameters():
         param.requires_grad = True
+    for param in model.pool.parameters():
+        param.requires_grad = True
     for param in model.proj.parameters():
         param.requires_grad = True
     optimizer = torch.optim.AdamW([
         {"params": model.proj.parameters(), "lr": cfg.triplet_lr, "weight_decay": cfg.triplet_wd},
+        {"params": model.pool.parameters(), "lr": cfg.triplet_lr, "weight_decay": cfg.triplet_wd},
         {"params": model.encoder.parameters(), "lr": cfg.triplet_lr * cfg.enc_lr_mult, "weight_decay": cfg.triplet_wd},
     ])
     print(f"Optimizer: proj_lr={cfg.triplet_lr:.2e}, enc_lr={cfg.triplet_lr * cfg.enc_lr_mult:.2e}")
