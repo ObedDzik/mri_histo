@@ -13,7 +13,7 @@ def get_histo_by_isup(encodings_dir, marksheet_csv, num_classes = 6, provider = 
     encodings_dir = Path(encodings_dir)
     df = marksheet_csv
     if provider != 'all':
-        df = df[df['data_provider'] == provider] # only use one provider to avoid disjoint embedding spaces
+        df = df[df['data_provider'] == provider]
     fname2isup = dict(zip(df["FILENAME"].astype(str), df["isup_grade"].astype(int)))
     out = [[] for i in range(num_classes)]
     for path in encodings_dir.rglob("*.npy"):
@@ -32,15 +32,31 @@ def get_histo_by_isup(encodings_dir, marksheet_csv, num_classes = 6, provider = 
         out[out_key].append(vector)
     return out
 
-def get_hard_negative_label(label, num_classes=3):
-    # to get challenging negative pairs, we pick a negative sample with a class label adjacent to the anchor
-    if label == 0:
-        return 1 # only neighbour of 0 is 1
-    if label == num_classes - 1:
-        return label - 1 # only neighbour of biggest class is second biggest
-    else:
-        return random.choice([label-1, label+1]) # otherwise randomly pick between previous and next label
+# def get_hard_negative_label(label, num_classes=6):
+#     # to get challenging negative pairs, we pick a negative sample with a class label adjacent to the anchor
+#     if label == 0:
+#         return 1 # only neighbour of 0 is 1
+#     if label == num_classes - 1:
+#         return label - 1 # only neighbour of biggest class is second biggest
+#     else:
+#         return random.choice([label-1, label+1]) # otherwise randomly pick between previous and next label
     
+def get_hard_negative_label(label, num_classes=6):
+    # Sample from all other classes, not just adjacent
+    candidates = list(range(num_classes))
+    candidates.remove(label)
+    # Weight towards adjacent classes (80%) vs distant (20%)
+    if random.random() < 0.8:
+        # Adjacent (harder)
+        adjacent = []
+        if label > 0:
+            adjacent.append(label - 1)
+        if label < num_classes - 1:
+            adjacent.append(label + 1)
+        return random.choice(adjacent) if adjacent else random.choice(candidates)
+    else:
+        return random.choice(candidates)
+
 def get_random_sample(label, histo_dict):
     return random.choice(histo_dict[label])
 

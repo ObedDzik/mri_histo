@@ -22,18 +22,48 @@ def collate_resize_to_imgsize(batch):
             extras[k].append(s[k])
     return {"image": torch.stack(imgs, 0), "label": torch.stack(labels, 0), **extras}
 
-def make_pos_sampler(df: pd.DataFrame, pos_ratio: float = 0.33, seed: int = 42):
-    """Oversample lesion-intersecting slices."""
-    is_pos = df["has_lesion"].astype(int).values
-    n_pos = int(is_pos.sum()); n_neg = len(is_pos) - n_pos
-    assert n_pos > 0, "No positive slices in train folds."
-    w_neg = 1.0
-    w_pos = (pos_ratio/(1-pos_ratio)) * (n_neg/max(1,n_pos))
-    w = np.where(is_pos==1, w_pos, w_neg).astype(np.float64)
-    generator = torch.Generator().manual_seed(seed)
-    return WeightedRandomSampler(weights=torch.from_numpy(w), num_samples=len(w), replacement=True, generator=generator)
+# def make_pos_sampler(df: pd.DataFrame, pos_ratio: float = 0.33, seed: int = 42):
+#     """Oversample lesion-intersecting slices."""
+#     is_pos = df["has_lesion"].astype(int).values
+#     n_pos = int(is_pos.sum()); n_neg = len(is_pos) - n_pos
+#     assert n_pos > 0, "No positive slices in train folds."
+#     w_neg = 1.0
+#     w_pos = (pos_ratio/(1-pos_ratio)) * (n_neg/max(1,n_pos))
+#     w = np.where(is_pos==1, w_pos, w_neg).astype(np.float64)
+#     generator = torch.Generator().manual_seed(seed)
+#     return WeightedRandomSampler(weights=torch.from_numpy(w), num_samples=len(w), replacement=True, generator=generator)
 
-def class_weights_from_train(df: pd.DataFrame, target="isup6"):
+def make_pos_sampler(df, pos_ratio = 0.33, seed = 42):
+    """Oversample lesion slices AND balance across ISUP grades."""
+
+    is_pos = df["has_lesion"].astype(int).values
+    n_pos = int(is_pos.sum())
+    n_neg = len(is_pos) - n_pos
+    assert n_pos > 0, "No positive slices in train folds."
+    
+    w_neg = 1.0
+    w_pos_base = (pos_ratio/(1-pos_ratio)) * (n_neg/max(1, n_pos))
+    
+    labels = df["merged_ISUP"].values
+    pos_labels = labels[is_pos == 1]
+    class_counts = np.bincount(pos_labels, minlength=6)
+    class_weights = 1.0 / np.where(class_counts > 0, class_counts, 1)
+    
+    w = np.ones(len(df), dtype=np.float64)
+    w[is_pos == 0] = w_neg
+    for i in np.where(is_pos == 1)[0]:
+        grade = labels[i]
+        w[i] = w_pos_base * class_weights[grade]
+    
+    generator = torch.Generator().manual_seed(seed)
+    return WeightedRandomSampler(
+        weights=torch.from_numpy(w), 
+        num_samples=len(w), 
+        replacement=True, 
+        generator=generator
+    )
+
+def class_weights_from_train(df, target="isup6"):
     label_column = df['merged_ISUP']
     label_mapper = LABEL_MAPPERS[target]
     y = label_column.map(label_mapper)
