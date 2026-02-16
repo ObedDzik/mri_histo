@@ -4,7 +4,7 @@ from collections import Counter
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import DataLoader, WeightedRandomSampler
+from torch.utils.data import Subset, DataLoader, WeightedRandomSampler
 from create_dataset import LABEL_MAPPERS, PicaiSliceDataset
 IMG_SIZE=256
 

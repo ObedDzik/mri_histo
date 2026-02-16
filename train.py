@@ -60,7 +60,6 @@ def run_triplet_epoch(loader, model, triplet_loss_fn, optimizer = None, device =
     is_training = optimizer is not None
     model.train(is_training)
     total_loss = 0.0
-    total_samples = 0
     with torch.set_grad_enabled(is_training):
         for batch in tqdm(loader, desc=desc):
             images = batch["image"].to(device, non_blocking=True)
@@ -73,10 +72,8 @@ def run_triplet_epoch(loader, model, triplet_loss_fn, optimizer = None, device =
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 optimizer.step()
-            batch_size = images.size(0)
-            total_loss += loss.item() * batch_size
-            total_samples += batch_size
-    return total_loss / max(total_samples, 1)
+            total_loss += loss.item()
+    return total_loss/len(loader)
 
 
 @torch.no_grad()
@@ -296,12 +293,14 @@ def stage1_triplet_alignment(model, train_loader, val_loader, train_buckets, val
     for param in model.proj.parameters():
         param.requires_grad = True
     optimizer = torch.optim.AdamW([
-        {"params": model.proj.parameters(), "lr": cfg.triplet_lr, "weight_decay": cfg.triplet_wd},
-        {"params": model.pool.parameters(), "lr": cfg.triplet_lr, "weight_decay": cfg.triplet_wd},
-        {"params": model.encoder.parameters(), "lr": cfg.triplet_lr * cfg.enc_lr_mult, "weight_decay": cfg.triplet_wd},
+        {"params": model.proj.parameters(), "lr": cfg.triplet_proj_lr}, #"weight_decay": cfg.triplet_wd},
+        {"params": model.pool.parameters(), "lr": cfg.triplet_pool_lr}, #"weight_decay": cfg.triplet_wd},
+        {"params": model.encoder.parameters(), "lr": cfg.triplet_enc_lr}, #"weight_decay": cfg.triplet_wd},
     ])
-    print(f"Optimizer: proj_lr={cfg.triplet_lr:.2e}, enc_lr={cfg.triplet_lr * cfg.enc_lr_mult:.2e}")
+
+    print(f"Optimizer: proj_lr={cfg.triplet_lr:.2e}, enc_lr={cfg.triplet_enc_lr}")
     print(f"Margin: {cfg.triplet_margin}")
+
 
     def train_triplet_loss(embeddings, labels):
         return triplet_loss_batch(
@@ -477,7 +476,7 @@ def evaluate_final(model, test_loader, class_weights, device):
     # Per-class metrics
     per_acc = {}
     per_auc = {}
-    for c in range(n_classes):
+    for c in range(6):
         mask = labels == c
         if mask.any():
             per_acc[c] = float((preds[mask] == c).mean())
@@ -492,14 +491,14 @@ def evaluate_final(model, test_loader, class_weights, device):
     metrics["per_acc"] = per_acc
     metrics["per_auc"] = per_auc
     metrics["macro_auc"] = float(np.nanmean(list(per_auc.values())))
-    metrics["cm"] = confusion_matrix(labels, preds, labels=list(range(n_classes)))
+    metrics["cm"] = confusion_matrix(labels, preds, labels=list(range(6)))
     print(f"\nOverall Metrics:")
     print(f"  Accuracy: {metrics['acc']:.4f}")
     print(f"  Balanced Accuracy: {metrics['bacc']:.4f}")
     print(f"  F1 (macro): {metrics['f1_macro']:.4f}")
     print(f"  AUC (macro): {metrics['macro_auc']:.4f}")
     print(f"\nPer-Class Performance:")
-    for c in range(n_classes):
+    for c in range(6):
         print(f"  Class {c}: acc={per_acc[c]:.4f}, auc={per_auc[c]:.4f}")
     print(f"\nConfusion Matrix:")
     print(metrics["cm"])

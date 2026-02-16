@@ -1,12 +1,12 @@
 #!/bin/bash
 #SBATCH -J isup-proj-triplet
 #SBATCH -A aip-medilab
-#SBATCH --gres=gpu:l40s:1
-#SBATCH -t 00:50:00
+#SBATCH --gres=gpu:h100:1
+#SBATCH -t 05:50:00
 #SBATCH -c 8
 #SBATCH --mem=64G
 #SBATCH -D /project/aip-medilab/shared/picai
-#SBATCH -o /home/obed/projects/aip-medilab/obed/medproj/mri_histo/results/testmri_histo_train_encoder-%j.out
+#SBATCH -o /home/obed/projects/aip-medilab/obed/medproj/mri_histo/results/testing_align_encoder-%j.out
 
 
 source /project/aip-medilab/obed/medproj/mri_histo/mri_env/bin/activate
