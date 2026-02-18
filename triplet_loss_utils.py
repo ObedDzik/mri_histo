@@ -32,15 +32,6 @@ def get_histo_by_isup(encodings_dir, marksheet_csv, num_classes = 6, provider = 
         out[out_key].append(vector)
     return out
 
-# def get_hard_negative_label(label, num_classes=6):
-#     # to get challenging negative pairs, we pick a negative sample with a class label adjacent to the anchor
-#     if label == 0:
-#         return 1 # only neighbour of 0 is 1
-#     if label == num_classes - 1:
-#         return label - 1 # only neighbour of biggest class is second biggest
-#     else:
-#         return random.choice([label-1, label+1]) # otherwise randomly pick between previous and next label
-    
 def get_hard_negative_label(label, num_classes=6):
     candidates = list(range(num_classes))
     candidates.remove(label)

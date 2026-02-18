@@ -106,7 +106,7 @@ class DINOModelWrapper(nn.Module):
                 if 'x_norm_patchtokens' in output:
                     patch_tokens = output['x_norm_patchtokens']
                 else:
-                    raise KeyError(f"Unexpected DINOv2 output keys: {output.keys()}")
+                    raise KeyError(f"Unexpected DINOv3 output keys: {output.keys()}")
         else:
             print('Using Fallback for older implementations. Assuming [B, 1+N, C] with CLS token first')
             output = self.encoder(x)

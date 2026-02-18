@@ -99,6 +99,7 @@ def extract_embeddings(loader, model, device="cuda", desc='extract_emb_train'):
 
 def evaluate_embeddings_with_logreg(X_train, y_train, X_val, y_val, n_classes, max_iter, class_weights=None, classes=None):
     """Train logistic regression on embeddings and evaluate."""
+    print("Running Logistic Regression")
     weights = {int(k): v.item() for k, v in zip(classes, class_weights)}
     clf = LogisticRegression(max_iter=max_iter, solver="saga", class_weight = weights)
     clf.fit(X_train, y_train)
@@ -267,7 +268,6 @@ def setup_model(cfg, device):
         backbone=dino_backbone,
         num_classes=cfg.data.n_classes,
         img_size=cfg.data.img_size,
-        proj_dim=cfg.model.proj_dim,
         attn_dim=cfg.model.attn_dim,
         head_hidden=cfg.head.head_hidden,
         head_dropout=cfg.head.head_dropout,
@@ -288,17 +288,17 @@ def stage1_triplet_alignment(model, train_loader, val_loader, train_buckets, val
         param.requires_grad = False
     for param in model.encoder.parameters():
         param.requires_grad = True
-    for param in model.pool.parameters():
-        param.requires_grad = True
     for param in model.proj.parameters():
         param.requires_grad = True
+    for param in model.pool.parameters():
+        param.requires_grad = True
     optimizer = torch.optim.AdamW([
-        {"params": model.proj.parameters(), "lr": cfg.triplet_proj_lr}, #"weight_decay": cfg.triplet_wd},
+        {"params": model.proj.parameters(), "lr": cfg.triplet_proj_lr},
         {"params": model.pool.parameters(), "lr": cfg.triplet_pool_lr}, #"weight_decay": cfg.triplet_wd},
         {"params": model.encoder.parameters(), "lr": cfg.triplet_enc_lr}, #"weight_decay": cfg.triplet_wd},
     ])
 
-    print(f"Optimizer: proj_lr={cfg.triplet_lr:.2e}, enc_lr={cfg.triplet_enc_lr}")
+    print(f"Optimizer: proj_lr={cfg.triplet_proj_lr:.2e}, pool_lr={cfg.triplet_pool_lr:.2e}, enc_lr={cfg.triplet_enc_lr:.2e}")
     print(f"Margin: {cfg.triplet_margin}")
 
 
