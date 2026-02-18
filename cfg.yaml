@@ -1,6 +1,6 @@
 train_mode: train_mri_only #train_classifier #triplet_align #train_mri_only
 setup_name: align_encoder_test
-name: train_${train_mode}_${setup_name}_test
+name: train_${train_mode}_${setup_name}_train_only
 chkpt_dir: /${oc.env:CHECKPOINT}/${oc.env:JOB_ID}
 
 seed: 42
@@ -15,7 +15,7 @@ data:
   folds_train: [0,1,2,3]
   folds_val: [4]
   folds_test: None
-  batch_size: 64 #112
+  batch_size: 112
   pos_ratio: 0.33
   num_workers: 8
   pct_lower: 0.5

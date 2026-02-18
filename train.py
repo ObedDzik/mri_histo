@@ -76,12 +76,12 @@ def run_triplet_epoch(loader, model, triplet_loss_fn, optimizer = None, device =
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 optimizer.step()
 
-            all_embeddings.append(emb.cpu())
-            all_labels.append(labels.cpu())
+            all_embeddings.append(embeddings.detach().float().cpu().numpy())
+            all_labels.append(labels.detach().long().cpu().numpy())
             total_loss +=loss.item()
     
-    X = torch.cat(all_embeddings, dim=0).numpy()
-    y = torch.cat(all_labels, dim=0).numpy()
+    X = np.concatenate(all_embeddings, axis=0)
+    y = np.concatenate(all_labels, axis=0)
     
     return total_loss/len(loader), X, y
 
@@ -164,7 +164,7 @@ def run_sup_con(cfg, loader, model, optimizer = None, device = 'cuda', desc='tra
         for batch in tqdm(loader, desc=desc):
             images = batch['image'].to(device, non_blocking=True)
             labels = batch['label'].to(device, non_blocking=True)
-            _, emb = model(images)
+            _, embeddings = model(images)
             loss = criterion(emb, labels)
 
             if is_training:
@@ -173,12 +173,12 @@ def run_sup_con(cfg, loader, model, optimizer = None, device = 'cuda', desc='tra
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=0.0)
                 optimizer.step()
 
-            all_embeddings.append(emb.cpu())
-            all_labels.append(labels.cpu())
+            all_embeddings.append(embeddings.detach().float().cpu().numpy())
+            all_labels.append(labels.detach().long().cpu().numpy())
             total_loss +=loss.item()
     
-    X = torch.cat(all_embeddings, dim=0).numpy()
-    y = torch.cat(all_labels, dim=0).numpy()
+    X = np.concatenate(all_embeddings, axis=0)
+    y = np.concatenate(all_labels, axis=0)
     
     return total_loss/len(loader), X, y
 
@@ -549,7 +549,6 @@ def stage3_classification(model, train_loader, val_loader, class_weights, cfg, d
         print("\n[Warning] No improvement during training, using final model")
     model.eval()
     return model
-
 
 @torch.no_grad()
 def evaluate_final(model, test_loader, class_weights, device):
