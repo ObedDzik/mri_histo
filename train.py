@@ -24,6 +24,7 @@ from create_model_wrapper import DINOModelWrapper
 from get_dino_model import dinov3_vitl16
 from triplet_loss_utils import get_histo_by_isup, triplet_loss_batch
 from train_utils import (EarlyStopper, set_seed)
+from contrastive_loss import SupervisedContrastiveLoss
 
 def extract_patient_ids(df, patient_col = "patient_id", case_col = "case_id"):
     """Extract patient IDs from dataframe, inferring from case_id if needed."""
@@ -60,6 +61,8 @@ def run_triplet_epoch(loader, model, triplet_loss_fn, optimizer = None, device =
     is_training = optimizer is not None
     model.train(is_training)
     total_loss = 0.0
+    all_embeddings = []
+    all_labels = []
     with torch.set_grad_enabled(is_training):
         for batch in tqdm(loader, desc=desc):
             images = batch["image"].to(device, non_blocking=True)
@@ -72,8 +75,15 @@ def run_triplet_epoch(loader, model, triplet_loss_fn, optimizer = None, device =
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 optimizer.step()
-            total_loss += loss.item()
-    return total_loss/len(loader)
+
+            all_embeddings.append(emb.cpu())
+            all_labels.append(labels.cpu())
+            total_loss +=loss.item()
+    
+    X = torch.cat(all_embeddings, dim=0).numpy()
+    y = torch.cat(all_labels, dim=0).numpy()
+    
+    return total_loss/len(loader), X, y
 
 
 @torch.no_grad()
@@ -141,6 +151,36 @@ def evaluate_embeddings_with_logreg(X_train, y_train, X_val, y_val, n_classes, m
     metrics["per_auc"] = per_auc
     metrics["macro_auc"] = macro_auc
     return metrics
+
+def run_sup_con(cfg, loader, model, optimizer = None, device = 'cuda', desc='train_mri_only'):
+    is_training = optimizer is not None
+    model.train(is_training)
+    criterion = SupervisedContrastiveLoss(cfg.temperature, cfg.base_temperature)
+    all_embeddings = []
+    all_labels = []
+    total_loss = 0.0
+
+    with torch.set_grad_enabled(is_training):
+        for batch in tqdm(loader, desc=desc):
+            images = batch['image'].to(device, non_blocking=True)
+            labels = batch['label'].to(device, non_blocking=True)
+            _, emb = model(images)
+            loss = criterion(emb, labels)
+
+            if is_training:
+                optimizer.zero_grad(set_to_none=True)
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=0.0)
+                optimizer.step()
+
+            all_embeddings.append(emb.cpu())
+            all_labels.append(labels.cpu())
+            total_loss +=loss.item()
+    
+    X = torch.cat(all_embeddings, dim=0).numpy()
+    y = torch.cat(all_labels, dim=0).numpy()
+    
+    return total_loss/len(loader), X, y
 
 def run_ce_epoch(loader, model, class_weights = None, optimizer = None, device = "cuda"):
     """Run one epoch of cross-entropy training/validation."""
@@ -324,10 +364,10 @@ def stage1_triplet_alignment(model, train_loader, val_loader, train_buckets, val
     
     early_stopper = EarlyStopper(patience=cfg.triplet_patience)
     for epoch in range(1, cfg.triplet_epochs + 1):
-        train_loss = run_triplet_epoch(train_loader, model, train_triplet_loss, optimizer, device, desc='train')
-        val_loss = run_triplet_epoch(val_loader, model, val_triplet_loss, None, device, desc='eval')
-        X_train, y_train = extract_embeddings(train_loader, model, device, desc='extract_emb_train')
-        X_val, y_val = extract_embeddings(val_loader, model, device, desc='extract_emb_val')
+        train_loss, X_train, y_train = run_triplet_epoch(train_loader, model, train_triplet_loss, optimizer, device, desc='train')
+        val_loss, X_val, y_val = run_triplet_epoch(val_loader, model, val_triplet_loss, None, device, desc='eval')
+        # X_train, y_train = extract_embeddings(train_loader, model, device, desc='extract_emb_train')
+        # X_val, y_val = extract_embeddings(val_loader, model, device, desc='extract_emb_val')
         lr_metrics = evaluate_embeddings_with_logreg(X_train, y_train, X_val, y_val, cfg.n_classes, cfg.logreg_max_iter, class_weights=class_weights, classes=classes)
         
         print(f"\nEpoch {epoch}/{cfg.triplet_epochs}")
@@ -365,10 +405,74 @@ def stage1_triplet_alignment(model, train_loader, val_loader, train_buckets, val
     model.eval()
     return model
 
-def stage2_classification(model, train_loader, val_loader, class_weights, cfg, device):
-    """Stage 2: Train classification head on aligned embeddings."""
+def stage2_mri_only(model, train_loader, val_loader, cfg, device, class_weights=None, classes=None):
+    """Stage 2: Align encoder embeddings with mri images only."""
     print("\n" + "="*80)
-    print("STAGE 2: CLASSIFICATION HEAD")
+    print("STAGE 2: MRI ONLY")
+    print("="*80)
+    # Freeze everything except encoder and projection
+    for param in model.parameters():
+        param.requires_grad = False
+    for param in model.encoder.parameters():
+        param.requires_grad = True
+    for param in model.proj.parameters():
+        param.requires_grad = True
+    for param in model.pool.parameters():
+        param.requires_grad = True
+    optimizer = torch.optim.AdamW([
+        {"params": model.proj.parameters(), "lr": cfg.m_proj_lr},
+        {"params": model.pool.parameters(), "lr": cfg.m_pool_lr}, 
+        {"params": model.encoder.parameters(), "lr": cfg.m_enc_lr},
+    ])
+
+    print(f"Optimizer: proj_lr={cfg.m_proj_lr:.2e}, pool_lr={cfg.m_pool_lr:.2e}, enc_lr={cfg.m_enc_lr:.2e}")
+    
+    early_stopper = EarlyStopper(patience=cfg.m_patience)
+    for epoch in range(1, cfg.m_epochs + 1):
+        train_loss, X_train, y_train = run_sup_con(cfg, train_loader, model, optimizer, device, desc='train')
+        val_loss, X_val, y_val = run_sup_con(cfg, val_loader, model, None, device, desc='eval')
+        # X_train, y_train = extract_embeddings(train_loader, model, device, desc='extract_emb_train')
+        # X_val, y_val = extract_embeddings(val_loader, model, device, desc='extract_emb_val')
+        lr_metrics = evaluate_embeddings_with_logreg(X_train, y_train, X_val, y_val, cfg.n_classes, cfg.logreg_max_iter, class_weights=class_weights, classes=classes)
+        
+        print(f"\nEpoch {epoch}/{cfg.m_epochs}")
+        print(f" Loss: train={train_loss:.4f}, val={val_loss:.4f}")
+        print(f" LogReg: acc={lr_metrics['acc']:.4f}, bacc={lr_metrics['bacc']:.4f}, "f"f1={lr_metrics['f1_macro']:.4f}, auc={lr_metrics['macro_auc']:.4f}")
+        log_dict = {
+            "epoch": epoch,
+            "stage2/train_loss": train_loss,
+            "stage2/val_loss": val_loss,
+            "stage2/lr_acc": lr_metrics["acc"],
+            "stage2/lr_bacc": lr_metrics["bacc"],
+            "stage2/lr_f1": lr_metrics["f1_macro"],
+            "stage2/lr_auc": lr_metrics["macro_auc"],
+        }
+        for c in range(cfg.n_classes):
+            log_dict[f"stage2/lr_acc_c{c}"] = lr_metrics["per_acc"][c]
+            log_dict[f"stage2/lr_auc_c{c}"] = lr_metrics["per_auc"][c]
+        wandb.log(log_dict)
+        
+        # Early stopping based on macro AUC
+        checkpoint_path = Path(cfg.checkpoint_dir) / "stage2_best.pt"
+        if early_stopper.update(lr_metrics["macro_auc"], model, save_path=checkpoint_path):
+            print(f" New best model (auc={early_stopper.best:.4f})")
+        else:
+            print(f" No improvement ({early_stopper.num_bad}/{early_stopper.patience})")
+            if early_stopper.num_bad >= early_stopper.patience:
+                print(f"\nEarly stopping at epoch {epoch}")
+                break
+
+    if early_stopper.load_best_into(model):
+        print(f"\nLoaded best model from epoch with auc={early_stopper.best:.4f}")
+    else:
+        print("\n[Warning] No improvement during training, using final model")
+    model.eval()
+    return model
+
+def stage3_classification(model, train_loader, val_loader, class_weights, cfg, device):
+    """Stage 3: Train classification head on aligned embeddings."""
+    print("\n" + "="*80)
+    print("STAGE 3: CLASSIFICATION HEAD")
     print("="*80)
     
     for param in model.parameters():
@@ -421,16 +525,16 @@ def stage2_classification(model, train_loader, val_loader, class_weights, cfg, d
               f"bacc={val_metrics['bacc']:.4f}, f1={val_metrics['f1_macro']:.4f}")
         wandb.log({
             "epoch": epoch,
-            "stage2/train_loss": train_metrics["loss"],
-            "stage2/train_acc": train_metrics["acc"],
-            "stage2/train_bacc": train_metrics["bacc"],
-            "stage2/train_f1": train_metrics["f1_macro"],
-            "stage2/val_loss": val_metrics["loss"],
-            "stage2/val_acc": val_metrics["acc"],
-            "stage2/val_bacc": val_metrics["bacc"],
-            "stage2/val_f1": val_metrics["f1_macro"],
+            "stage3/train_loss": train_metrics["loss"],
+            "stage3/train_acc": train_metrics["acc"],
+            "stage3/train_bacc": train_metrics["bacc"],
+            "stage3/train_f1": train_metrics["f1_macro"],
+            "stage3/val_loss": val_metrics["loss"],
+            "stage3/val_acc": val_metrics["acc"],
+            "stage3/val_bacc": val_metrics["bacc"],
+            "stage3/val_f1": val_metrics["f1_macro"],
         })
-        checkpoint_path = Path(cfg.checkpoint_dir) / "stage2_best.pt"
+        checkpoint_path = Path(cfg.checkpoint_dir) / "stage3_best.pt"
         if early_stopper.update(val_metrics["bacc"], model, save_path=checkpoint_path):
             print(f"  New best model (bacc={early_stopper.best:.4f})")
         else:
@@ -519,16 +623,22 @@ def main(cfg):
     _tmpdir = mkdtemp()
     OmegaConf.save(cfg, os.path.join(_tmpdir, "train_config.yaml"), resolve=True)
     wandb.save(os.path.join(_tmpdir, "train_config.yaml"), base_path=_tmpdir, policy="now")
-
-    (train_loader, val_loader, test_loader, class_weights, classes_present, n_classes) = setup_dataloaders(cfg.data)
-    train_buckets, val_buckets = setup_histo_buckets(cfg.data)
+    train_loader, val_loader, test_loader, class_weights, classes_present, n_classes = setup_dataloaders(cfg.data)
+    
     model = setup_model(cfg, device)
 
-    # Stage 1: Triplet alignment
-    model = stage1_triplet_alignment(model,train_loader,val_loader,train_buckets,val_buckets,cfg.align,device,class_weights=class_weights,classes=classes_present)
-    if cfg.train_mode == "train_classifier":
-        # Stage 2: Classification head
-        model = stage2_classification(model, train_loader, val_loader, class_weights, cfg.head, device)
+    if cfg.train_mode == 'triplet_align':
+        # Stage 1: Triplet alignment
+        train_buckets, val_buckets = setup_histo_buckets(cfg.data)
+        model = stage1_triplet_alignment(model,train_loader,val_loader,train_buckets,val_buckets,cfg.align,device,class_weights=class_weights,classes=classes_present)
+    
+    elif cfg.train_mode == 'train_mri_only':
+        #Stage 2: MRI only embedding alignment training
+        model = stage2_mri_only(model, train_loader, val_loader, cfg.mri_only, device, class_weights=class_weights, classes=classes_present)
+    
+    elif cfg.train_mode == "train_classifier":
+        # Stage 3: Classification head
+        model = stage3_classification(model, train_loader, val_loader, class_weights, cfg.head, device)
         # Final evaluation on test set
         if test_loader is not None:
             test_metrics = evaluate_final(model, test_loader, class_weights, device)
@@ -541,6 +651,9 @@ def main(cfg):
         final_path = str(Path(cfg.chkpt_dir) / "final_model.pt")
         torch.save(model.state_dict(), final_path)
         print(f"\nFinal model saved to: {final_path}")
+    
+    else:
+        raise ValueError('Invalid training mode selected')
 
     wandb.finish()
     print("\n" + "="*80)
