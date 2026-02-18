@@ -165,7 +165,7 @@ def run_sup_con(cfg, loader, model, optimizer = None, device = 'cuda', desc='tra
             images = batch['image'].to(device, non_blocking=True)
             labels = batch['label'].to(device, non_blocking=True)
             _, embeddings = model(images)
-            loss = criterion(emb, labels)
+            loss = criterion(embeddings, labels)
 
             if is_training:
                 optimizer.zero_grad(set_to_none=True)

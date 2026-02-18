@@ -3,4 +3,5 @@ results/
 __pycache__
 submit_ob.sbatch
 mri_env
-
+only_train.py
+only_train_cfg.yaml
